@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>All Orders</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Bebas Neue', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            font-size: 48px;
+            text-transform: uppercase;
+        }
+        #orders-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+        }
+        .order-box {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100px;
+            height: 100px;
+            font-size: 24px;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+        .collected {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .uncollected {
+            background-color: #f44336;
+            color: white;
+        }
+        .being-prepared {
+            background-color: #2196F3;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <h1>All Orders</h1>
+    <div id="orders-container">
+        {% for order in orders %}
+            <div class="order-box 
+                {% if order.distribution_status == 50 %}
+                    {% if order.collected %}collected{% else %}being-prepared{% endif %}
+                {% else %}
+                    {% if order.collected %}collected{% else %}uncollected{% endif %}
+                {% endif %}"
+                data-chk-num="{{ order.chk_num }}"
+                data-status="{{ order.distribution_status }}"
+                onclick="toggleOrder(this)">
+                {{ order.chk_num }}
+            </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        function getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        }
+
+        function toggleOrder(element) {
+            const chkNum = element.dataset.chkNum;
+            fetch('/toggle_collected', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify({ chk_num: chkNum }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateOrders();
+                } else {
+                    console.error('Error toggling order:', data.error);
+                }
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+        }
+
+        function updateOrders() {
+            fetch('/all_orders', {
+                method: 'GET',
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            })
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const newOrdersContainer = doc.getElementById('orders-container');
+                const currentOrdersContainer = document.getElementById('orders-container');
+                currentOrdersContainer.innerHTML = newOrdersContainer.innerHTML;
+
+                // Re-attach event listeners
+                currentOrdersContainer.querySelectorAll('.order-box').forEach(box => {
+                    box.onclick = () => toggleOrder(box);
+                });
+            })
+            .catch((error) => {
+                console.error('Error updating orders:', error);
+            });
+        }
+
+        // Set up periodic updates every 5 seconds
+        setInterval(updateOrders, 5000);
+    </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+# Virtual environment
+venv/
+env/
+.venv/
+order_status_app_venv/
+
+# Flask stuff
+instance/
+.webassets-cache
+
+# Databases
+*.db
+*.sqlite
+
+# Environment variables
+.env
+.flaskenv
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo

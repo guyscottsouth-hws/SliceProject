@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Order Status</title>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            font-family: 'Bebas Neue', sans-serif;
+            background-color: black;
+            color: white;
+            overflow: hidden;
+        }
+        .container {
+            display: flex;
+            height: 100%;
+        }
+        .column {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 10px;
+            box-sizing: border-box;
+        }
+        .column:first-child {
+            border-right: 1px solid white;
+        }
+        h2 {
+            margin: 0 0 10px 0;
+            font-size: 4vw;
+            text-transform: uppercase;
+            text-align: center;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(20%, 1fr));
+            gap: 10px;
+            overflow-y: auto;
+            flex-grow: 1;
+            align-content: start;
+        }
+        .order-item {
+            position: relative;
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .order-item img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        .order-number {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 2.5vw;
+            font-weight: bold;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .new-order {
+            animation: fadeIn 1s;
+        }
+
+        /* Media query for portrait mode */
+        @media (orientation: portrait) {
+            .container {
+                flex-direction: column;
+            }
+            .column {
+                height: 50%;
+            }
+            .column:first-child {
+                border-right: none;
+                border-bottom: 1px solid white;
+            }
+            h2 {
+                font-size: 8vw;
+            }
+            .grid {
+                grid-template-columns: repeat(4, 1fr);
+            }
+            .order-number {
+                font-size: 5vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="column">
+            <h2>Being Prepared</h2>
+            <div id="being-prepared" class="grid">
+                {% for order in orders.being_prepared[:16] %}
+                    <div class="order-item">
+                        <img src="/static/Tri_1.png" alt="Pizza">
+                        <div class="order-number">{{ order }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="column">
+            <h2>Ready to Collect</h2>
+            <div id="ready-to-collect" class="grid">
+                {% for order in orders.ready_to_collect[:16] %}
+                    <div class="order-item">
+                        <img src="/static/Tri_1.png" alt="Pizza">
+                        <div class="order-number">{{ order }}</div>
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        }
+
+        function updateOrders() {
+            fetch('/', {
+                headers: {
+                    'X-CSRFToken': getCsrfToken()
+                }
+            })
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    
+                    updateColumn('being-prepared', doc);
+                    updateColumn('ready-to-collect', doc);
+                });
+        }
+
+        function updateColumn(columnId, doc) {
+            const currentOrders = new Set(Array.from(document.getElementById(columnId).querySelectorAll('.order-number')).map(div => div.textContent.trim()));
+            const newOrdersHtml = doc.getElementById(columnId).innerHTML;
+            document.getElementById(columnId).innerHTML = newOrdersHtml;
+            
+            const newOrders = new Set(Array.from(document.getElementById(columnId).querySelectorAll('.order-number')).map(div => div.textContent.trim()));
+            
+            newOrders.forEach(order => {
+                if (!currentOrders.has(order)) {
+                    const orderItem = Array.from(document.getElementById(columnId).children).find(el => el.querySelector('.order-number').textContent.trim() === order);
+                    if (orderItem) {
+                        orderItem.classList.add('new-order');
+                        setTimeout(() => orderItem.classList.remove('new-order'), 1000);
+                    }
+                }
+            });
+        }
+
+        setInterval(updateOrders, 5000);
+    </script>
+</body>
+</html>
