@@ -16,12 +16,13 @@ import sys
 from contextlib import contextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, time as dt_time, timedelta
-
+from pytz import timezone
+ 
 # Load environment variables
 load_dotenv()
-
+ 
 app = Flask(__name__)
-
+ 
 # Configuration
 class Config:
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
@@ -31,30 +32,30 @@ class Config:
     LOG_FILE = os.getenv('LOG_FILE', 'app.log')
     MAX_LOG_SIZE = int(os.getenv('MAX_LOG_SIZE', 10 * 1024 * 1024))  # 10 MB
     BACKUP_COUNT = int(os.getenv('BACKUP_COUNT', 5))
-
+ 
 app.config.from_object(Config)
-
+ 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
-
+ 
 # Set up logging
 handler = RotatingFileHandler(Config.LOG_FILE, maxBytes=Config.MAX_LOG_SIZE, backupCount=Config.BACKUP_COUNT)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
-
+ 
 # Connection parameters for SQL Anywhere
 DB_CONFIG = {
-    'driver': os.getenv('SQL_ANYWHERE_DRIVER', 'SQL Anywhere 17'),
-    'host': os.getenv('SQL_ANYWHERE_HOST', '10.179.254.66'),
-    'port': os.getenv('SQL_ANYWHERE_PORT', '2638'),
-    'database': os.getenv('SQL_ANYWHERE_DATABASE', 'MICROS'),
-    'username': os.getenv('SQL_ANYWHERE_USERNAME', 'custom'),
-    'password': os.getenv('SQL_ANYWHERE_PASSWORD', 'custom'),
-    'server': os.getenv('SQL_ANYWHERE_SERVER', 'sqlF0455MSRV')
+    'driver': os.getenv('SQL_ANYWHERE_DRIVER'),
+    'host': os.getenv('SQL_ANYWHERE_HOST'),
+    'port': os.getenv('SQL_ANYWHERE_PORT'),
+    'database': os.getenv('SQL_ANYWHERE_DATABASE'),
+    'username': os.getenv('SQL_ANYWHERE_USERNAME'),
+    'password': os.getenv('SQL_ANYWHERE_PASSWORD'),
+    'server': os.getenv('SQL_ANYWHERE_SERVER')
 }
-
+ 
 CONN_STR = (
     f"Driver={DB_CONFIG['driver']};"
     f"Host={DB_CONFIG['host']}:{DB_CONFIG['port']};"
@@ -64,24 +65,24 @@ CONN_STR = (
     f"pwd={DB_CONFIG['password']};"
     f"INT=no;"
 )
-
+ 
 @dataclass
 class Order:
     chk_num: str
     distribution_status: int
     collected: int = 0
     timestamp: datetime = datetime.now()
-
+ 
     @property
     def status(self) -> str:
         return 'being_prepared' if self.distribution_status == 50 else 'ready_to_collect'
-
+ 
 class OrderManager:
     def __init__(self):
         self.orders: Dict[str, List[str]] = {'being_prepared': [], 'ready_to_collect': []}
         self.shutdown_event = Event()
         self.initialize_sqlite_db()
-
+ 
     def initialize_sqlite_db(self):
         with sqlite3.connect(app.config['DATABASE']) as conn:
             cursor = conn.cursor()
@@ -100,7 +101,7 @@ class OrderManager:
                     self.reset_sqlite_db()
             else:
                 self.reset_sqlite_db()
-
+ 
     def reset_sqlite_db(self):
         with sqlite3.connect(app.config['DATABASE']) as conn:
             conn.execute('DROP TABLE IF EXISTS orders')
@@ -110,7 +111,7 @@ class OrderManager:
                              collected INTEGER DEFAULT 0,
                              timestamp TEXT DEFAULT CURRENT_TIMESTAMP)''')
         app.logger.info("SQLite database table 'orders' has been reset.")
-
+ 
     def update_orders(self):
         while not self.shutdown_event.is_set():
             try:
@@ -119,7 +120,7 @@ class OrderManager:
                     cursor = conn.cursor()
                     cursor.execute(self.get_orders_query())
                     results = cursor.fetchall()
-
+ 
                 # Update SQLite
                 with sqlite3.connect(app.config['DATABASE']) as sqlite_conn:
                     for row in results:
@@ -130,16 +131,14 @@ class OrderManager:
                             distribution_status = excluded.distribution_status
                             WHERE distribution_status != excluded.distribution_status
                         ''', (row.chk_num, row.distribution_status))
-
+ 
                 # Update in-memory orders
                 self.update_in_memory_orders()
-                
                 app.logger.debug(f"Orders updated: {self.orders}")
             except Exception as e:
                 app.logger.error(f"Error updating orders: {e}")
-            
             time.sleep(5)
-
+ 
     def update_in_memory_orders(self):
         with sqlite3.connect(app.config['DATABASE']) as conn:
             cursor = conn.cursor()
@@ -147,15 +146,15 @@ class OrderManager:
                               FROM orders 
                               WHERE distribution_status IN (50, 60)''')
             results = cursor.fetchall()
-
+ 
         new_orders = {'being_prepared': [], 'ready_to_collect': []}
         for row in results:
             order = Order(row[0], row[1], row[2], datetime.fromisoformat(row[3]))
             if not order.collected:
                 new_orders[order.status].append(order.chk_num)
-
+ 
         self.orders = new_orders
-
+ 
     @staticmethod
     def get_orders_query():
         return """
@@ -165,9 +164,9 @@ class OrderManager:
           AND distribution_status IN (50, 60)
         ORDER BY chk_num ASC
         """
-
+ 
 order_manager = OrderManager()
-
+ 
 @contextmanager
 def get_db_connection():
     conn = pyodbc.connect(CONN_STR)
@@ -175,11 +174,11 @@ def get_db_connection():
         yield conn
     finally:
         conn.close()
-
+ 
 @app.route('/')
 def index():
     return render_template('index.html', orders=order_manager.orders)
-
+ 
 @app.route('/all_orders')
 def all_orders():
     with sqlite3.connect(app.config['DATABASE']) as conn:
@@ -187,7 +186,7 @@ def all_orders():
         cursor.execute('SELECT chk_num, distribution_status, collected, timestamp FROM orders')
         orders = [{'chk_num': row[0], 'distribution_status': row[1], 'collected': row[2], 'timestamp': row[3]} for row in cursor.fetchall()]
     return render_template('all_orders.html', orders=orders)
-
+ 
 @app.route('/toggle_collected', methods=['POST'])
 def toggle_collected():
     chk_num = request.json['chk_num']
@@ -204,7 +203,7 @@ def toggle_collected():
             return jsonify({'success': True, 'new_status': new_status})
         else:
             return jsonify({'success': False, 'error': 'Order not found'}), 404
-
+ 
 @app.route('/debug')
 def debug():
     try:
@@ -212,32 +211,28 @@ def debug():
             cursor = conn.cursor()
             cursor.execute('SELECT * FROM orders')
             results = cursor.fetchall()
-        
         all_orders = [{'chk_num': row[0], 'distribution_status': row[1], 'collected': row[2], 'timestamp': row[3]} for row in results]
         return jsonify(all_orders)
     except Exception as e:
         app.logger.error(f"Error in debug route: {e}")
         return jsonify({'error': str(e)}), 500
-
+ 
 def signal_handler(signum, frame):
     app.logger.info('Shutting down...')
     order_manager.shutdown_event.set()
     scheduler.shutdown()
     sys.exit(0)
-
+ 
 def schedule_db_reset():
     order_manager.reset_sqlite_db()
-
+ 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, signal_handler)
-    
-    # Initialize the scheduler
-    scheduler = BackgroundScheduler()
+    # Initialize the scheduler with an explicit timezone
+    scheduler = BackgroundScheduler(timezone=timezone('Europe/London'))
     scheduler.add_job(schedule_db_reset, 'cron', hour=6, minute=0)
     scheduler.start()
-    
     update_thread = Thread(target=order_manager.update_orders)
     update_thread.start()
-    
     # Use Waitress as the production WSGI server
     serve(app, host='0.0.0.0', port=8080)
